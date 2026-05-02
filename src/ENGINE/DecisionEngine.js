@@ -5,8 +5,11 @@ import { mapStrategy } from "./StrategyMapper.js";
 import { composeMessage } from "./MessageComposer.js";
 import { buildRationale } from "./RationaleBuilder.js";
 
-export const compose = ({ trigger, merchant, category }) => {
+export const compose = ({ trigger, merchant, category, customer }) => {
 
+//      console.log("TRIGGER:", trigger);
+// console.log("MERCHANT:", merchant?.merchant_id);
+// console.log("CATEGORY:", merchant?.category_slug);
   // 1️⃣ Select best signal
   const signal = selectSignal(trigger, merchant, category);
   if (!signal) return null;
@@ -20,9 +23,13 @@ export const compose = ({ trigger, merchant, category }) => {
     strategy,
     trigger,
     merchant,
-    category
+    category,
+    customer
   });
 
+// console.log("SIGNAL:", signal);
+// console.log("STRATEGY:", strategy);
+// console.log("MESSAGE:", message);
   // ❗ IMPORTANT: prevent invalid output
   if (!message || typeof message !== "string") return null;
   // 4️⃣ Return final action

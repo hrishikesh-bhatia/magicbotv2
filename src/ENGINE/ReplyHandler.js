@@ -1,79 +1,145 @@
-export const handleReply = ({ message, turn_number }) => {
+// src/API/controllers/reply.controller.js
 
-  const msg = message.toLowerCase();
+const isAutoReply = (msg) => {
+  const text = msg.toLowerCase();
 
-  // 🔥 1. HOSTILE (VERY IMPORTANT)
-  if (
-    msg.includes("stop") ||
-    msg.includes("spam") ||
-    msg.includes("useless") ||
-    msg.includes("don't message")
-  ) {
-    return {
-      action: "end",
-      body: "Understood — I’ll stop here. If you need anything later, I’m here.",
-      rationale: "Detected hostile/opt-out intent"
-    };
-  }
+  return (
+    text.includes("thank you for contacting") ||
+    text.includes("we will respond shortly") ||
+    text.includes("auto-reply") ||
+    text.includes("out of office")
+  );
+};
 
-  // 🔥 2. AUTO-REPLY DETECTION (NEW)
-  if (
-    msg.includes("out of office") ||
-    msg.includes("auto reply") ||
-    msg.includes("i am away") ||
-    msg.includes("vacation")
-  ) {
-    return {
-      action: "end",
-      rationale: "Detected auto-reply pattern"
-    };
-  }
+const isHostile = (msg) => {
+  const text = msg.toLowerCase();
 
-  // 🔥 3. TOO MANY WAITS → END
-  if (turn_number && turn_number >= 3) {
-    return {
-      action: "end",
-      rationale: "Multiple low-signal replies, ending conversation"
-    };
-  }
+  return (
+    text.includes("stop") ||
+    text.includes("don't message") ||
+    text.includes("dont message") ||
+    text.includes("spam") ||
+    text.includes("useless") ||
+    text.includes("not interested")
+  );
+};
 
-  // 🔥 4. STRONG YES (EXECUTION MODE)
-  if (msg.includes("yes") || msg.includes("do it") || msg.includes("ok lets do it")) {
-    return {
-      action: "send",
-      body: "Great — I’ll draft the message using your current offer and share it shortly for approval.",
-      rationale: "User confirmed intent to proceed"
-    };
-  }
+const isPositive = (msg) => {
+  const text = msg.toLowerCase();
 
-  // 🔥 5. NO (PIVOT)
-  if (msg.includes("no")) {
-    return {
-      action: "send",
-      body: "No problem. Want me to try a different offer or angle instead?",
-      rationale: "User rejected initial suggestion"
-    };
-  }
+  return (
+    text.includes("yes") ||
+    text.includes("ok") ||
+    text.includes("okay") ||
+    text.includes("let's do it") ||
+    text.includes("lets do it") ||
+    text.includes("go ahead") ||
+    text.includes("sure")
+  );
+};
 
-  // 🔥 6. QUESTION → CLEAR ACTION
-  if (msg.includes("how") || msg.includes("what")) {
-    return {
-      action: "send",
-      body: "I’ll create a short message using your current offer and send it to high-intent users. Want me to proceed?",
-      rationale: "User asked for clarification"
-    };
-  }
+const isClarification = (msg) => {
+  const text = msg.toLowerCase();
 
-  // 🔥 7. LOW SIGNAL
-  if (msg.length < 10) {
-    return {
+  return (
+    text.includes("what") ||
+    text.includes("how") ||
+    text.includes("why") ||
+    text.includes("explain")
+  );
+};
+
+const isOffTopic = (msg) => {
+  const text = msg.toLowerCase();
+
+  return (
+    text.includes("gst") ||
+    text.includes("tax") ||
+    text.includes("accounting")
+  );
+};
+
+export const handleReply = (req, res) => {
+
+  const { message, turn_number } = req.body;
+
+  if (!message) {
+    return res.json({
       action: "wait",
-      rationale: "Low-signal response"
-    };
+      wait_seconds: 3600,
+      rationale: "Empty message received"
+    });
   }
 
-  return {
-    action: "wait",
-    rationale: "Unclear intent"
-  };
+  // 🔥 1. HOSTILE → END
+  if (isHostile(message)) {
+    return res.json({
+      action: "end",
+      rationale: "Merchant explicitly opted out or expressed frustration"
+    });
+  }
+
+  // 🔥 2. AUTO-REPLY HANDLING
+  if (isAutoReply(message)) {
+
+    if (turn_number <= 2) {
+      return res.json({
+        action: "send",
+        body: "Looks like an auto-reply 😊 When you see this, just reply YES and I’ll proceed.",
+        cta: "binary_yes_no",
+        rationale: "Detected auto-reply; prompting owner"
+      });
+    }
+
+    if (turn_number === 3) {
+      return res.json({
+        action: "wait",
+        wait_seconds: 86400,
+        rationale: "Repeated auto-reply; waiting for human response"
+      });
+    }
+
+    return res.json({
+      action: "end",
+      rationale: "Multiple auto-replies with no engagement"
+    });
+  }
+
+  // 🔥 3. OFF-TOPIC
+  if (isOffTopic(message)) {
+    return res.json({
+      action: "send",
+      body: "I’ll have to leave that to a specialist 😄 Coming back — want me to proceed with the message we discussed?",
+      cta: "yes_no",
+      rationale: "Out-of-scope query redirected"
+    });
+  }
+
+  // 🔥 4. POSITIVE INTENT → EXECUTION MODE
+  if (isPositive(message)) {
+    return res.json({
+      action: "send",
+      body: "Great — I’ll draft and prepare everything for you. I’ll keep it short, targeted, and ready to send. Want me to proceed?",
+      cta: "binary_yes_no",
+      rationale: "Merchant intent confirmed; moving to execution"
+    });
+  }
+
+  // 🔥 5. CLARIFICATION
+  if (isClarification(message)) {
+    return res.json({
+      action: "send",
+      body: "I’ll keep it simple — short message, clear offer, and targeted to high-intent customers. Want me to draft it for you?",
+      cta: "yes_no",
+      rationale: "Merchant seeking clarity"
+    });
+  }
+
+  // 🔥 6. FALLBACK → KEEP FLOW ALIVE
+  return res.json({
+    action: "send",
+    body: "Got it — want me to go ahead and draft the message for you?",
+    cta: "yes_no",
+    rationale: "Fallback engagement"
+  });
 };

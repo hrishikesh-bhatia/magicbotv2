@@ -22,7 +22,7 @@ Author: magicpin AI Challenge Team
 
 # Your bot's URL (where your bot is running)
 BOT_URL = "http://localhost:3000"
-
+# BOT_URL = "https://magicbot-pjtn.onrender.com"
 # Choose your LLM provider: "openai", "anthropic", "gemini", "deepseek", "groq", "ollama", "openrouter"
 LLM_PROVIDER = "ollama"
 

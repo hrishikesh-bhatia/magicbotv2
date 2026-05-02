@@ -10,26 +10,86 @@ export const handleTick = (req, res) => {
     return res.json({ actions: [] });
   }
 
+  console.log("==== CONTEXT DEBUG ====");
+  console.log("MERCHANTS:", contextStore.merchant);
+  console.log("CATEGORIES:", contextStore.category);
+  console.log("CUSTOMERS:", contextStore.customer);
+
   for (let trigger of available_triggers) {
 
-    // 🔥 1. Get merchant (IMPORTANT)
-    const merchant = contextStore.merchant?.[trigger.merchant_id];
+    console.log("\n---- NEW TRIGGER ----");
+    console.log("RAW TRIGGER:", trigger);
 
-    if (!merchant) continue;
+    let merchant = null;
 
-    // 🔥 2. Get category from merchant
-    const category = contextStore.category?.[merchant.category_slug];
+    // ✅ 1. Try direct mapping
+    if (trigger.merchant_id) {
+      merchant = contextStore.merchant?.[trigger.merchant_id];
+    }
 
-    if (!category) continue;
+    // 🔥 2. Fallback merchant
+    if (!merchant) {
+      const merchantIds = Object.keys(contextStore.merchant || {});
+      if (merchantIds.length > 0) {
+        merchant = contextStore.merchant[merchantIds[0]];
+        console.log("FALLBACK MERCHANT USED:", merchant.merchant_id);
+      }
+    }
 
-    // 🔥 3. Compose decision
+    if (!merchant) {
+      console.log("❌ NO MERCHANT FOUND → SKIPPING");
+      continue;
+    }
+
+    let category = contextStore.category?.[merchant.category_slug];
+
+    // 🔥 3. Fallback category
+    if (!category) {
+      const catIds = Object.keys(contextStore.category || {});
+      if (catIds.length > 0) {
+        category = contextStore.category[catIds[0]];
+        console.log("FALLBACK CATEGORY USED:", category.slug || catIds[0]);
+      }
+    }
+
+    if (!category) {
+      console.log("❌ NO CATEGORY FOUND → SKIPPING");
+      continue;
+    }
+
+    // 🔥 4. CUSTOMER LOGIC (FIXED)
+    let customer = null;
+
+    const allCustomers = Object.values(contextStore.customer || {});
+
+    console.log("ALL CUSTOMERS:", allCustomers);
+
+    if (allCustomers.length > 0) {
+      // Try matching merchant
+      customer =
+        allCustomers.find(
+          c => c.merchant_id === merchant.merchant_id
+        ) || allCustomers[0]; // 🔥 fallback to any customer
+
+      console.log("SELECTED CUSTOMER:", customer);
+    } else {
+      console.log("⚠️ NO CUSTOMERS AVAILABLE");
+    }
+
+    // 🔥 5. Compose decision
     const decision = compose({
       trigger,
       merchant,
-      category
+      category,
+      customer   // 🔥 IMPORTANT FIX
     });
 
-    if (!decision) continue;
+    console.log("DECISION:", decision);
+
+    if (!decision) {
+      console.log("❌ NO DECISION → SKIPPING");
+      continue;
+    }
 
     actions.push({
       merchant_id: merchant.merchant_id,
@@ -38,15 +98,19 @@ export const handleTick = (req, res) => {
     });
   }
 
-  // 🔥 4. Sort by urgency (important)
+  // 🔥 6. Sort by urgency
   actions.sort((a, b) => {
     const tA = available_triggers.find(t => t.id === a.trigger_id);
     const tB = available_triggers.find(t => t.id === b.trigger_id);
     return (tB?.urgency || 0) - (tA?.urgency || 0);
   });
 
-  // 🔥 5. Limit actions
+  const finalActions = actions.slice(0, 20);
+
+  console.log("\n==== FINAL ACTIONS ====");
+  console.log(finalActions);
+
   return res.json({
-    actions: actions.slice(0, 20)
+    actions: finalActions
   });
 };
