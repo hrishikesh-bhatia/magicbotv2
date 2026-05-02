@@ -1,116 +1,88 @@
 import { contextStore } from "../../STORE/context.store.js";
 import { compose } from "../../ENGINE/DecisionEngine.js";
+import { SuppressionManager } from "../../ENGINE/SuppressionManager.js";
 
+/**
+ * Triggered periodically by the judge to initiate proactive conversations.
+ * Handles trigger resolution, context matching, and suppression check.
+ */
 export const handleTick = (req, res) => {
   const { available_triggers } = req.body;
-
   const actions = [];
 
+  // 1. Early exit if no triggers are active for this tick
   if (!available_triggers || available_triggers.length === 0) {
     return res.json({ actions: [] });
   }
 
-  console.log("==== CONTEXT DEBUG ====");
-  console.log("MERCHANTS:", contextStore.merchant);
-  console.log("CATEGORIES:", contextStore.category);
-  console.log("CUSTOMERS:", contextStore.customer);
+  // 2. Process each trigger independently[cite: 2, 15]
+  for (let triggerData of available_triggers) {
+    // Resolve the actual trigger context object from the store[cite: 11]
+    const trigger = contextStore.trigger?.[triggerData.id] || triggerData;
 
-  for (let trigger of available_triggers) {
-
-    console.log("\n---- NEW TRIGGER ----");
-    console.log("RAW TRIGGER:", trigger);
-
-    let merchant = null;
-
-    // ✅ 1. Try direct mapping
-    if (trigger.merchant_id) {
-      merchant = contextStore.merchant?.[trigger.merchant_id];
-    }
-
-    // 🔥 2. Fallback merchant
-    if (!merchant) {
-      const merchantIds = Object.keys(contextStore.merchant || {});
-      if (merchantIds.length > 0) {
-        merchant = contextStore.merchant[merchantIds[0]];
-        console.log("FALLBACK MERCHANT USED:", merchant.merchant_id);
-      }
-    }
-
-    if (!merchant) {
-      console.log("❌ NO MERCHANT FOUND → SKIPPING");
+    // A. Suppression Check: Never send the same trigger/event twice[cite: 1, 25]
+    if (trigger.suppression_key && SuppressionManager.isBlocked(trigger.suppression_key)) {
       continue;
     }
 
-    let category = contextStore.category?.[merchant.category_slug];
+    // B. Resolve Merchant Context[cite: 1, 15]
+    const merchantId = trigger.merchant_id || trigger.payload?.merchant_id;
+    const merchant = contextStore.merchant?.[merchantId];
 
-    // 🔥 3. Fallback category
-    if (!category) {
-      const catIds = Object.keys(contextStore.category || {});
-      if (catIds.length > 0) {
-        category = contextStore.category[catIds[0]];
-        console.log("FALLBACK CATEGORY USED:", category.slug || catIds[0]);
-      }
-    }
-
-    if (!category) {
-      console.log("❌ NO CATEGORY FOUND → SKIPPING");
+    if (!merchant) {
+      // In production, we skip triggers that don't have associated merchant context
       continue;
     }
 
-    // 🔥 4. CUSTOMER LOGIC (FIXED)
+    // C. Resolve Category Context[cite: 1, 15]
+    const category = contextStore.category?.[merchant.category_slug];
+    if (!category) {
+      continue;
+    }
+
+    // D. Resolve Customer Context (Optional for most, required for customer scope)[cite: 1, 15]
     let customer = null;
-
-    const allCustomers = Object.values(contextStore.customer || {});
-
-    console.log("ALL CUSTOMERS:", allCustomers);
-
-    if (allCustomers.length > 0) {
-      // Try matching merchant
-      customer =
-        allCustomers.find(
-          c => c.merchant_id === merchant.merchant_id
-        ) || allCustomers[0]; // 🔥 fallback to any customer
-
-      console.log("SELECTED CUSTOMER:", customer);
-    } else {
-      console.log("⚠️ NO CUSTOMERS AVAILABLE");
+    if (trigger.customer_id) {
+      customer = contextStore.customer?.[trigger.customer_id];
+    } else if (trigger.scope === "customer") {
+      // Fallback: Find any customer belonging to this merchant if specific ID missing[cite: 15]
+      customer = Object.values(contextStore.customer || {})
+        .find(c => c.merchant_id === merchant.merchant_id);
     }
 
-    // 🔥 5. Compose decision
+    // E. Execute Deterministic Composition[cite: 1, 18]
     const decision = compose({
       trigger,
       merchant,
       category,
-      customer   // 🔥 IMPORTANT FIX
+      customer
     });
 
-    console.log("DECISION:", decision);
+    if (decision) {
+      // F. Mark as suppressed before adding to actions
+      if (trigger.suppression_key) {
+        SuppressionManager.mark(trigger.suppression_key);
+      }
 
-    if (!decision) {
-      console.log("❌ NO DECISION → SKIPPING");
-      continue;
+      actions.push({
+        conversation_id: `conv_${merchant.merchant_id}_${trigger.id}`, // Unique ID for tracking[cite: 2]
+        merchant_id: merchant.merchant_id,
+        customer_id: customer?.customer_id || null,
+        trigger_id: trigger.id,
+        ...decision
+      });
     }
-
-    actions.push({
-      merchant_id: merchant.merchant_id,
-      trigger_id: trigger.id,
-      ...decision
-    });
   }
 
-  // 🔥 6. Sort by urgency
+  // 3. Prioritize by Urgency (5 = High, 1 = Low)
   actions.sort((a, b) => {
     const tA = available_triggers.find(t => t.id === a.trigger_id);
     const tB = available_triggers.find(t => t.id === b.trigger_id);
     return (tB?.urgency || 0) - (tA?.urgency || 0);
   });
 
-  const finalActions = actions.slice(0, 20);
-
-  console.log("\n==== FINAL ACTIONS ====");
-  console.log(finalActions);
-
+  // 4. Respect the 20-action cap per tick[cite: 2]
   return res.json({
-    actions: finalActions
+    actions: actions.slice(0, 20)
   });
 };
