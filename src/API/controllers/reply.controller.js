@@ -1,5 +1,6 @@
 import { conversationStore } from "../../STORE/conversation.store.js";
 import { classifyIntent } from "../../ENGINE/IntentClassifier.js";
+import { contextStore } from "../../STORE/context.store.js"; // Added to pull business name/category
 
 // ---------- Keyword Detectors (Safety Fallbacks) ----------
 const isAutoReply = (msg) => {
@@ -39,7 +40,7 @@ const isPositive = (msg) => {
 // ---------- Controller ----------
 
 export const handleReply = async (req, res) => {
-  const { conversation_id, message, turn_number } = req.body;
+  const { conversation_id, message, turn_number, from_role, merchant_id } = req.body;
 
   if (!conversation_id) {
     return res.json({
@@ -70,8 +71,52 @@ export const handleReply = async (req, res) => {
     });
   }
 
-  // CRITICAL FIX: Define 'msg' before using it in Section 3
   const msg = message.toLowerCase();
+
+  // --- 2. GLOBAL SAFETY CHECKS (Priority #1) ---
+  // Moved to top to handle both Merchants and Customers correctly.
+  if (isHostile(msg)) {
+    state.last_intent = "hostile";
+    state.last_action = "end";
+    return res.json({
+      action: "end",
+      rationale: "Opt-out detected (Hostile/STOP)"
+    });
+  }
+
+  if (isAutoReply(msg)) {
+    state.last_intent = "auto_reply";
+    if (state.turn_count <= 2) {
+      state.last_action = "send";
+      return res.json({
+        action: "send",
+        body: "Looks like an auto-reply 😊 I'll wait for a manual response to proceed.",
+        cta: "none", // No CTA for auto-replies to prevent loops
+        rationale: "Handling automated responses"
+      });
+    }
+    if (state.turn_count === 3) {
+      state.last_action = "wait";
+      return res.json({ action: "wait", wait_seconds: 86400, rationale: "Repeated auto-reply backoff" });
+    }
+    state.last_action = "end";
+    return res.json({ action: "end", rationale: "Multiple auto-replies; exiting" });
+  }
+
+  // --- 3. PERSONA SWITCHING (Priority #2) ---
+  if (from_role === "customer") {
+    const merchant = contextStore.merchant?.[merchant_id] || { name: "us" };
+    
+    // Persona: The Business itself answering a customer
+    return res.json({
+      action: "send",
+      body: `Thanks for messaging ${merchant.name}! We've received your request and our team will get back to you shortly. Is there anything else we can help you with today?`,
+      cta: "none",
+      rationale: "Persona Switch: Acting as the business to handle direct customer inquiry."
+    });
+  }
+
+  // --- REMAINDER: MERCHANT ASSISTANT FLOW (Persona: Vera) ---
 
   // 2. PRIMARY INTENT: LLM Classification
   let intent = "UNKNOWN";
@@ -84,17 +129,14 @@ export const handleReply = async (req, res) => {
 
   // 3. SECONDARY INTENT: Keyword Fallback
   if (intent === "UNKNOWN") {
-    if (isHostile(msg)) intent = "HOSTILE";
-    else if (isAutoReply(msg)) intent = "AUTO_REPLY";
-    else if (isPositive(msg)) intent = "POSITIVE";
+    if (isPositive(msg)) intent = "POSITIVE";
     else if (msg.includes("change") || msg.includes("edit") || msg.includes("tweak")) intent = "TWEAK";
     else if (msg.includes("short") || msg.includes("emoji") || msg.includes("tone")) intent = "REFINEMENT";
   }
 
-// ---------- 4. DETERMINISTIC STATE MACHINE ----------
+  // ---------- 4. DETERMINISTIC STATE MACHINE ----------
 
-  // --- 0. CAPTURE CUSTOM DRAFT (CRITICAL FIX: MOVE TO TOP) ---
-  // If we were waiting for them to type their version, grab whatever they send next.
+  // --- 0. CAPTURE CUSTOM DRAFT ---
   if (state.last_intent === "awaiting_draft") {
     state.last_intent = "approval_pending";
     state.last_action = "send";
@@ -106,36 +148,6 @@ export const handleReply = async (req, res) => {
       cta: "yes_no",
       rationale: "Priority Capture: Successfully grabbed merchant-provided draft from state."
     });
-  }
-
-  // --- 1. HOSTILE / OPT-OUT ---
-  if (intent === "HOSTILE") {
-    state.last_intent = "hostile";
-    state.last_action = "end";
-    return res.json({
-      action: "end",
-      rationale: "Merchant opted out or signaled disinterest"
-    });
-  }
-
-  // --- 2. AUTO REPLY DETECTION ---
-  if (intent === "AUTO_REPLY") {
-    state.last_intent = "auto_reply";
-    if (state.turn_count <= 2) {
-      state.last_action = "send";
-      return res.json({
-        action: "send",
-        body: "Looks like an auto-reply 😊 When you see this, just reply YES and I’ll proceed.",
-        cta: "yes_no",
-        rationale: "Handling automated responses"
-      });
-    }
-    if (state.turn_count === 3) {
-      state.last_action = "wait";
-      return res.json({ action: "wait", wait_seconds: 86400, rationale: "Repeated auto-reply backoff" });
-    }
-    state.last_action = "end";
-    return res.json({ action: "end", rationale: "Multiple auto-replies; exiting" });
   }
 
   // --- 3. TWEAK / REFINEMENT REQUESTED ---
@@ -163,9 +175,8 @@ export const handleReply = async (req, res) => {
     });
   }
 
-  // --- 5. POSITIVE INTENT (Approval & Final Launch) ---
+  // --- 5. POSITIVE INTENT ---
   if (intent === "POSITIVE") {
-    // FINAL EXIT: If they say YES to the "One last check"
     if (state.last_intent === "final_confirmation") {
       state.last_intent = "completed";
       state.last_action = "end";
@@ -176,7 +187,6 @@ export const handleReply = async (req, res) => {
       });
     }
 
-    // STEP-DOWN APPROVAL: From 'Ready to launch?' to 'One last check'
     if (state.last_intent === "approval_pending" || state.last_action === "send") {
       state.last_intent = "final_confirmation";
       state.last_action = "send";

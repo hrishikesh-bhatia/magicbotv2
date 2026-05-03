@@ -6,28 +6,27 @@ export const metadataController = (req, res) => {
   return res.json({
     team_name: "Hrishikesh Bhatia",
     team_members: ["Hrishikesh Bhatia"],
-    model: "deterministic-engine-v1",
+    model: "Vera-Deterministic-Hybrid-v2",
 
     approach: [
-      "4-Context Composition Framework: strictly isolating Category, Merchant, Trigger, and Customer data[cite: 1, 3]",
-      "Deterministic Decision Engine: prioritizing signal selection (Research, Performance, Events) with urgency-aware logic[cite: 1, 23]",
-      "Semantic Intent Parsing: multi-turn state machine to detect auto-replies, intent transitions, and hostile exits[cite: 1, 14]",
-      "Specific Anchor Logic: grounding every message in verifiable facts (performance numbers, dates, or research citations)[cite: 1, 3]",
-      "Category-Aware Voice matching: peer-clinical tone for dentists/pharmacies vs. retail-promo for restaurants[cite: 1, 4]",
-      "Suppression Management: global key-tracking to prevent duplicate messaging and anti-repetition penalties[cite: 1, 25]",
-      "Customer-facing capability: on-behalf-of-merchant messaging driven by lapse thresholds and recall windows[cite: 1, 4]",
-      "Structured Rationale Generation: providing per-action explanations for scoring transparency[cite: 1, 21]"
+      "Role-Aware Persona Switching: Dual-voice logic that branches between Merchant Assistant and Business Persona based on from_role",
+      "100% Trigger Coverage: Implementation of a 'Golden Fallback' mechanism ensuring zero empty action arrays across all 6 trigger types",
+      "Deterministic State Machine: Strict multi-turn management for Tweak Capturing, Approval Flow, and Final Confirmation",
+      "Global Safety Firewall: Priority-ordered detection of Auto-Replies and Hostile exits across all roles to prevent loop penalties",
+      "Context-Anchored Messaging: Grounding proactive messages in merchant-specific attributes and category-slug marketing goals",
+      "Urgency-Driven Prioritization: Sorting and priority-tagging actions based on trigger urgency to maximize Decision Quality scores",
+      "Idempotent Teardown Protocol: Systematic clearing of Suppression and Conversation states while preserving Merchant Context"
     ].join("; "),
 
     capabilities: [
-      "Deterministic Multi-turn handling with graceful exit on auto-reply detection[cite: 1, 14]",
-      "High-fidelity context ingestion (Version-controlled idempotent updates)[cite: 2, 11]",
-      "Category-specific offer optimization (Merchant active-offer vs. vertical-catalog fallback)[cite: 20]",
-      "Urgency-prioritized proactive engagement (20-action cap compliant)[cite: 2, 15]",
-      "Personalized customer outreach with preference and language-mix honoring[cite: 1, 3]",
-      "Stateless logic with state-assisted conversation history tracking[cite: 14, 28]"
+      "Dual-Persona handling for Merchant-Assistant and Merchant-to-Customer communications",
+      "Deterministic Tweak Capture (Capture-and-Confirm) to eliminate LLM hallucination in campaign edits",
+      "Three-Strike Auto-Reply Dampening: Wait -> Backoff -> End sequence to handle automated loops",
+      "High-fidelity context ingestion with version-controlled idempotent updates",
+      "Urgency-prioritized proactive engagement within the 20-action cap",
+      "Stateless logic supported by in-memory conversation state tracking"
     ],
 
-    version: "1.2.0" // Incremented version to reflect architectural updates
+    version: "2.0.0" // Major version bump to reflect Persona Switching and 100% Coverage updates
   });
 };
