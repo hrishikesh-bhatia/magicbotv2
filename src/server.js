@@ -35,7 +35,7 @@ app.use("/test", testRoute);
 // These match the strict technical contract provided in the challenge brief.
 app.use("/v1", healthRoute);   // GET /v1/healthz
 app.use("/v1", tickRoute);     // POST /v1/tick
-app.use("/v1/reply", replyRoute);    // POST /v1/reply
+app.use("/v1", replyRoute);    // POST /v1/reply
 app.use("/v1", contextRoute);  // POST /v1/context
 app.use("/v1", metadataRoute); // GET /v1/metadata
 
