@@ -103,16 +103,37 @@ export const handleReply = async (req, res) => {
     return res.json({ action: "end", rationale: "Multiple auto-replies; exiting" });
   }
 
-  // --- 3. PERSONA SWITCHING (Priority #2) ---
+  // --- 3. PERSONA SWITCH: CUSTOMER HANDLING (Priority #2) ---
   if (from_role === "customer") {
     const merchant = contextStore.merchant?.[merchant_id] || { name: "us" };
-    
-    // Persona: The Business itself answering a customer
+    const lowMsg = message.toLowerCase();
+
+    // SCENARIO A: Booking / Slot Picking (The "Wed 5 Nov" case)
+    if (lowMsg.includes("book") || lowMsg.includes("appointment") || lowMsg.includes("slot") || lowMsg.includes("pm") || lowMsg.includes("am")) {
+      return res.json({
+        action: "send",
+        body: `Absolutely! I've noted your request for ${merchant.name}. Our team will check the calendar and confirm your slot shortly. Looking forward to seeing you!`,
+        cta: "none",
+        rationale: "Customer Slot Pick: Affirmative booking confirmation acting as the business."
+      });
+    }
+
+    // SCENARIO B: Affirmative / Confirmation (The "Yes please" case)
+    if (isPositive(lowMsg)) {
+      return res.json({
+        action: "send",
+        body: `Great! We're getting that sorted for you at ${merchant.name}. Is there anything specific you'd like us to prepare before you arrive?`,
+        cta: "none",
+        rationale: "Customer Affirmation: Handling positive response as the business persona."
+      });
+    }
+
+    // SCENARIO C: General Inquiry (The Fallback)
     return res.json({
       action: "send",
-      body: `Thanks for messaging ${merchant.name}! We've received your request and our team will get back to you shortly. Is there anything else we can help you with today?`,
+      body: `Thanks for reaching out to ${merchant.name}! We've received your message: "${message}". One of our specialists will get back to you right away.`,
       cta: "none",
-      rationale: "Persona Switch: Acting as the business to handle direct customer inquiry."
+      rationale: "Customer Inquiry: Professional business acknowledgement."
     });
   }
 
